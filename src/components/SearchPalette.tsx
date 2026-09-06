@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { AppState } from '../types'
 import { formatFull, relativeLabel } from '../lib/date'
 import { IconSearch } from './Icons'
@@ -27,7 +28,7 @@ export function SearchPalette({ state, onPick, onClose }: Props) {
 
   useEffect(() => setCursor(0), [query])
 
-  return (
+  return createPortal(
     <div className="overlay" onMouseDown={onClose}>
       <div className="search-box" onMouseDown={(e) => e.stopPropagation()}>
         <input
@@ -88,6 +89,7 @@ export function SearchPalette({ state, onPick, onClose }: Props) {
           ))}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

@@ -1,5 +1,11 @@
 export type Priority = 0 | 1 | 2 // 0 — обычная, 1 — важная, 2 — срочная
 
+export type RepeatRule =
+  | { type: 'daily' }
+  | { type: 'weekly'; days: number[] } // 0 — понедельник
+  | { type: 'interval'; every: number } // каждые N дней от startDate
+  | { type: 'monthly'; day: number } // число месяца, 1–31
+
 export interface Task {
   id: string
   day: string // YYYY-MM-DD
@@ -10,6 +16,21 @@ export interface Task {
   order: number
   createdAt: number
   doneAt: number | null
+  remindAt: string | null // HH:MM
+  notifiedAt: number | null
+  repeatId: string | null
+}
+
+export interface Repeat {
+  id: string
+  title: string
+  rule: RepeatRule
+  priority: Priority
+  goalId: string | null
+  remindAt: string | null // HH:MM
+  startDate: string
+  active: boolean
+  createdAt: number
 }
 
 export interface Goal {
@@ -25,6 +46,9 @@ export interface AppState {
   version: number
   tasks: Task[]
   goals: Goal[]
+  repeats: Repeat[]
+  repeatLog: Record<string, true> // `${repeatId}|${day}` — повтор уже создан
   notes: Record<string, string> // день -> заметка
   accent: string
+  remindersOn: boolean
 }

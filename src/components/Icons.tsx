@@ -95,3 +95,27 @@ export const IconLogo = ({ size = 18 }: Props) => (
     <path d="M5 6.5h14M5 12h9M5 17.5h6" />
   </svg>
 )
+
+export const IconClock = ({ size = 15 }: Props) => (
+  <svg {...base(size)}><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></svg>
+)
+
+export const IconRepeat = ({ size = 17 }: Props) => (
+  <svg {...base(size)}>
+    <path d="M4 9a5 5 0 0 1 5-5h9M18 4l-3-3M18 4l-3 3" />
+    <path d="M20 15a5 5 0 0 1-5 5H6M6 20l3-3M6 20l3 3" />
+  </svg>
+)
+
+export const IconDots = ({ size = 17 }: Props) => (
+  <svg {...base(size)} strokeWidth={2.4}>
+    <path d="M5 12h.01M12 12h.01M19 12h.01" />
+  </svg>
+)
+
+export const IconBell = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <path d="M18 16v-5a6 6 0 1 0-12 0v5l-1.5 2.5h15L18 16Z" />
+    <path d="M10 21h4" />
+  </svg>
+)

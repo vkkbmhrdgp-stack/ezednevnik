@@ -1,16 +1,39 @@
 import { useSyncExternalStore } from 'react'
-import type { AppState, Goal, Priority, Task } from '../types'
+import type { AppState, Goal, Priority, Repeat, RepeatRule, Task } from '../types'
 import { todayKey } from './date'
+import { matchesDay } from './repeats'
 
 const STORAGE_KEY = 'ezednevnik.v1'
 export const ACCENTS = ['#7c5cff', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899']
 
 const emptyState: AppState = {
-  version: 1,
+  version: 2,
   tasks: [],
   goals: [],
+  repeats: [],
+  repeatLog: {},
   notes: {},
   accent: ACCENTS[0],
+  remindersOn: false,
+}
+
+/** Дополняет данные старых версий полями, появившимися позже. */
+function migrate(raw: Partial<AppState>): AppState {
+  return {
+    ...emptyState,
+    ...raw,
+    version: 2,
+    tasks: (Array.isArray(raw.tasks) ? raw.tasks : []).map((t: Task) => ({
+      ...t,
+      remindAt: t.remindAt ?? null,
+      notifiedAt: t.notifiedAt ?? null,
+      repeatId: t.repeatId ?? null,
+    })),
+    goals: Array.isArray(raw.goals) ? raw.goals : [],
+    repeats: Array.isArray(raw.repeats) ? raw.repeats : [],
+    repeatLog: raw.repeatLog && typeof raw.repeatLog === 'object' ? raw.repeatLog : {},
+    notes: raw.notes && typeof raw.notes === 'object' ? raw.notes : {},
+  }
 }
 
 function uid(): string {
@@ -21,14 +44,7 @@ function load(): AppState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return emptyState
-    const parsed = JSON.parse(raw) as Partial<AppState>
-    return {
-      ...emptyState,
-      ...parsed,
-      tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
-      goals: Array.isArray(parsed.goals) ? parsed.goals : [],
-      notes: parsed.notes && typeof parsed.notes === 'object' ? parsed.notes : {},
-    }
+    return migrate(JSON.parse(raw) as Partial<AppState>)
   } catch {
     return emptyState
   }
@@ -70,7 +86,13 @@ export function useStore(): AppState {
 
 // ——— задачи ———
 
-export function addTask(day: string, title: string, priority: Priority = 0, goalId: string | null = null) {
+export function addTask(
+  day: string,
+  title: string,
+  priority: Priority = 0,
+  goalId: string | null = null,
+  remindAt: string | null = null,
+) {
   const trimmed = title.trim()
   if (!trimmed) return
   const maxOrder = state.tasks
@@ -86,8 +108,25 @@ export function addTask(day: string, title: string, priority: Priority = 0, goal
     order: maxOrder + 1,
     createdAt: Date.now(),
     doneAt: null,
+    remindAt,
+    notifiedAt: null,
+    repeatId: null,
   }
   set({ ...state, tasks: [...state.tasks, task] })
+}
+
+export function setReminder(id: string, remindAt: string | null) {
+  updateTask(id, { remindAt, notifiedAt: null })
+}
+
+export function markNotified(ids: string[]) {
+  if (!ids.length) return
+  const set2 = new Set(ids)
+  const now = Date.now()
+  set({
+    ...state,
+    tasks: state.tasks.map((t) => (set2.has(t.id) ? { ...t, notifiedAt: now } : t)),
+  })
 }
 
 export function toggleTask(id: string) {
@@ -211,6 +250,126 @@ export function setAccent(accent: string) {
   set({ ...state, accent })
 }
 
+export function setRemindersOn(remindersOn: boolean) {
+  set({ ...state, remindersOn })
+}
+
+// ——— повторяющиеся задачи ———
+
+export function addRepeat(input: {
+  title: string
+  rule: RepeatRule
+  priority?: Priority
+  goalId?: string | null
+  remindAt?: string | null
+  startDate: string
+}) {
+  const title = input.title.trim()
+  if (!title) return
+  const repeat: Repeat = {
+    id: uid(),
+    title,
+    rule: input.rule,
+    priority: input.priority ?? 0,
+    goalId: input.goalId ?? null,
+    remindAt: input.remindAt ?? null,
+    startDate: input.startDate,
+    active: true,
+    createdAt: Date.now(),
+  }
+  set({ ...state, repeats: [...state.repeats, repeat] })
+}
+
+export function updateRepeat(id: string, patch: Partial<Omit<Repeat, 'id'>>) {
+  set({ ...state, repeats: state.repeats.map((r) => (r.id === id ? { ...r, ...patch } : r)) })
+}
+
+/**
+ * Пауза убирает уже созданные задачи следующих дней, включение — разрешает
+ * создать их заново.
+ */
+export function toggleRepeat(id: string) {
+  const repeat = state.repeats.find((r) => r.id === id)
+  if (!repeat) return
+  const today = todayKey()
+  const active = !repeat.active
+  const log: Record<string, true> = {}
+  for (const key of Object.keys(state.repeatLog)) {
+    const [repeatId, day] = key.split('|')
+    if (active && repeatId === id && day > today) continue // дать повтору развернуться заново
+    log[key] = true
+  }
+  set({
+    ...state,
+    repeats: state.repeats.map((r) => (r.id === id ? { ...r, active } : r)),
+    repeatLog: log,
+    tasks: active
+      ? state.tasks
+      : state.tasks.filter((t) => !(t.repeatId === id && !t.done && t.day > today)),
+  })
+}
+
+/** Удаляет повтор; будущие созданные им задачи тоже убираются. */
+export function removeRepeat(id: string) {
+  const today = todayKey()
+  const log: Record<string, true> = {}
+  for (const key of Object.keys(state.repeatLog)) {
+    if (!key.startsWith(`${id}|`)) log[key] = true
+  }
+  set({
+    ...state,
+    repeats: state.repeats.filter((r) => r.id !== id),
+    repeatLog: log,
+    tasks: state.tasks.filter((t) => !(t.repeatId === id && !t.done && t.day >= today)),
+  })
+}
+
+/**
+ * Создаёт задачи из повторов на переданные дни (сегодня и позже).
+ * Каждая пара «повтор + день» разворачивается один раз, поэтому удалённая
+ * задача не появляется снова.
+ */
+export function materialize(days: string[]) {
+  if (!state.repeats.length) return
+  const today = todayKey()
+  const created: Task[] = []
+  const log = { ...state.repeatLog }
+  const orderByDay = new Map<string, number>()
+
+  for (const day of days) {
+    if (day < today) continue
+    for (const repeat of state.repeats) {
+      const key = `${repeat.id}|${day}`
+      if (log[key]) continue
+      if (!matchesDay(repeat, day)) continue
+      log[key] = true
+      let order = orderByDay.get(day)
+      if (order === undefined) {
+        order = state.tasks.filter((t) => t.day === day).reduce((max, t) => Math.max(max, t.order), -1)
+      }
+      order += 1
+      orderByDay.set(day, order)
+      created.push({
+        id: uid(),
+        day,
+        title: repeat.title,
+        done: false,
+        priority: repeat.priority,
+        goalId: repeat.goalId,
+        order,
+        createdAt: Date.now(),
+        doneAt: null,
+        remindAt: repeat.remindAt,
+        notifiedAt: null,
+        repeatId: repeat.id,
+      })
+    }
+  }
+
+  if (!created.length) return
+  set({ ...state, tasks: [...state.tasks, ...created], repeatLog: log })
+}
+
 // ——— бэкап ———
 
 export function exportData(): string {
@@ -221,12 +380,7 @@ export function importData(json: string): boolean {
   try {
     const parsed = JSON.parse(json) as Partial<AppState>
     if (!Array.isArray(parsed.tasks)) return false
-    set({
-      ...emptyState,
-      ...parsed,
-      goals: Array.isArray(parsed.goals) ? parsed.goals : [],
-      notes: parsed.notes && typeof parsed.notes === 'object' ? parsed.notes : {},
-    })
+    set(migrate(parsed))
     return true
   } catch {
     return false

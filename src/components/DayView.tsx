@@ -3,7 +3,7 @@ import type { AppState, Priority } from '../types'
 import {
   addTask, clearDone, dayStats, moveUndone, reorderTask, setNote, tasksOfDay, updateTask,
 } from '../lib/store'
-import { WEEKDAYS_FULL, addDays, formatFull, relativeLabel, todayKey, weekdayIndex } from '../lib/date'
+import { WEEKDAYS_FULL, addDays, formatLong, fromKey, relativeLabel, todayKey, weekdayIndex } from '../lib/date'
 import { TaskItem } from './TaskItem'
 import { WeekStrip } from './WeekStrip'
 import {
@@ -28,6 +28,7 @@ export function DayView({ state, day, onDay, onSearch, onToast }: Props) {
   const [dragId, setDragId] = useState<string | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const touch = useRef<{ x: number; y: number } | null>(null)
 
   const tasks = useMemo(() => tasksOfDay(state, day), [state.tasks, day])
   const stats = dayStats(state, day)
@@ -45,7 +46,7 @@ export function DayView({ state, day, onDay, onSearch, onToast }: Props) {
     function onKey(e: KeyboardEvent) {
       const target = e.target as HTMLElement
       const typing = ['INPUT', 'TEXTAREA'].includes(target.tagName)
-      if (e.key === 'Enter' && !typing && !e.metaKey && !e.ctrlKey) {
+      if (e.key === 'Enter' && !typing && !e.metaKey && !e.ctrlKey && window.innerWidth > 900) {
         e.preventDefault()
         inputRef.current?.focus()
       }
@@ -76,9 +77,10 @@ export function DayView({ state, day, onDay, onSearch, onToast }: Props) {
         </button>
 
         <div className="day-title">
-          <h1>{formatFull(day)}</h1>
+          <h1>{formatLong(day)}<span className="desktop-only"> {fromKey(day).getFullYear()}</span></h1>
           <span className="weekday desktop-only">{WEEKDAYS_FULL[weekdayIndex(day)]}</span>
-          {relative && <span className="chip">{relative}</span>}
+          {relative && relative !== 'сегодня' && <span className="chip">{relative}</span>}
+          {relative === 'сегодня' && <span className="chip desktop-only">сегодня</span>}
         </div>
 
         <div className="spacer" />
@@ -110,43 +112,60 @@ export function DayView({ state, day, onDay, onSearch, onToast }: Props) {
 
       <WeekStrip state={state} day={day} onDay={onDay} />
 
-      <div className="panel content">
-        <div className="composer">
-          <input
-            ref={inputRef}
-            value={draft}
-            placeholder="Что нужно сделать?"
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') submit()
-              if (e.key === 'Escape') (e.target as HTMLInputElement).blur()
-            }}
-          />
-          {goals.length > 0 && (
-            <select
-              className="select desktop-only"
-              value={goalId}
-              onChange={(e) => setGoalId(e.target.value)}
-            >
-              <option value="">без цели</option>
-              {goals.map((g) => (
-                <option key={g.id} value={g.id}>{g.title}</option>
-              ))}
-            </select>
-          )}
-          <button
-            className="prio-pick"
-            onClick={() => setPriority(((priority + 1) % 3) as Priority)}
-            title="Приоритет новой задачи"
+      <div className="composer">
+        <input
+          ref={inputRef}
+          value={draft}
+          placeholder="Что нужно сделать?"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submit()
+            if (e.key === 'Escape') (e.target as HTMLInputElement).blur()
+          }}
+        />
+        {goals.length > 0 && (
+          <select
+            className="select desktop-only"
+            value={goalId}
+            onChange={(e) => setGoalId(e.target.value)}
           >
-            <i className={`flag p${priority}`} />
-            <span className="desktop-only">{PRIORITY_LABEL[priority]}</span>
-          </button>
-          <button className="btn primary" onClick={submit}>
-            <IconPlus /> <span className="desktop-only">Добавить</span>
-          </button>
-        </div>
+            <option value="">без цели</option>
+            {goals.map((g) => (
+              <option key={g.id} value={g.id}>{g.title}</option>
+            ))}
+          </select>
+        )}
+        <button
+          className="prio-pick"
+          onClick={() => setPriority(((priority + 1) % 3) as Priority)}
+          title="Приоритет новой задачи"
+        >
+          <i className={`flag p${priority}`} />
+          <span className="desktop-only">{PRIORITY_LABEL[priority]}</span>
+        </button>
+        <button className="btn primary" onClick={submit}>
+          <IconPlus /> <span className="desktop-only">Добавить</span>
+        </button>
+      </div>
 
+      <div
+        className="panel content"
+        onTouchStart={(e) => {
+          const t = e.touches[0]
+          touch.current = { x: t.clientX, y: t.clientY }
+        }}
+        onTouchEnd={(e) => {
+          const start = touch.current
+          if (!start) return
+          touch.current = null
+          const t = e.changedTouches[0]
+          const dx = t.clientX - start.x
+          const dy = t.clientY - start.y
+          if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.8) {
+            onDay(addDays(day, dx < 0 ? 1 : -1))
+          }
+        }}
+      >
         {tasks.length === 0 ? (
           <div className="empty">
             <div className="big">На этот день пока пусто</div>
@@ -157,9 +176,7 @@ export function DayView({ state, day, onDay, onSearch, onToast }: Props) {
             <div className="list">
               <div className="list-head">
                 <span className="section-label">Задачи</span>
-                <span className="badge" style={{ color: 'var(--muted-2)', fontSize: 11 }}>
-                  {active.length}
-                </span>
+                <span className="count-badge">{active.length}</span>
                 <div className="spacer" />
                 {undone > 0 && (
                   <button
@@ -169,7 +186,8 @@ export function DayView({ state, day, onDay, onSearch, onToast }: Props) {
                       if (moved) onToast(`Перенесено на завтра: ${moved}`)
                     }}
                   >
-                    Перенести незакрытые
+                    <span className="desktop-only">Перенести незакрытые</span>
+                    <span className="mobile-only">На завтра</span>
                   </button>
                 )}
                 <button className="btn ghost" onClick={() => setShowNote((v) => !v)}>
@@ -206,9 +224,7 @@ export function DayView({ state, day, onDay, onSearch, onToast }: Props) {
               <div className="list">
                 <div className="list-head">
                   <span className="section-label">Выполнено</span>
-                  <span className="badge" style={{ color: 'var(--muted-2)', fontSize: 11 }}>
-                    {done.length}
-                  </span>
+                  <span className="count-badge">{done.length}</span>
                   <div className="spacer" />
                   <button className="btn ghost danger" onClick={() => clearDone(day)}>
                     <IconBroom /> Очистить

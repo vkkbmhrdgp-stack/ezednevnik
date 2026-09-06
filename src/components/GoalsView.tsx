@@ -34,33 +34,39 @@ export function GoalsView({ state }: Props) {
       </header>
 
       <div className="panel content">
-        <div className="goal-form">
+        <div className="form">
           <input
+            className="field"
             type="text"
             value={title}
             placeholder="Например: прочитать 12 книг"
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && submit()}
           />
-          <input
-            type="number"
-            min={0}
-            value={target}
-            title="Сколько задач нужно закрыть (0 — без счётчика)"
-            onChange={(e) => setTarget(Number(e.target.value))}
-          />
-          <div className="accents">
-            {ACCENTS.map((c) => (
-              <button
-                key={c}
-                className={`accent-dot${color === c ? ' active' : ''}`}
-                style={{ background: c, color: c }}
-                onClick={() => setColor(c)}
-                aria-label={`Цвет ${c}`}
-              />
-            ))}
+          <div className="form-row">
+            <input
+              className="field narrow"
+              type="number"
+              min={0}
+              value={target}
+              title="Сколько задач нужно закрыть (0 — без счётчика)"
+              onChange={(e) => setTarget(Number(e.target.value))}
+            />
+            <span style={{ color: 'var(--muted-2)', fontSize: 12.5 }}>задач до цели</span>
+            <div className="spacer" />
+            <div className="accents">
+              {ACCENTS.map((c) => (
+                <button
+                  key={c}
+                  className={`accent-dot${color === c ? ' active' : ''}`}
+                  style={{ background: c, color: c }}
+                  onClick={() => setColor(c)}
+                  aria-label={`Цвет ${c}`}
+                />
+              ))}
+            </div>
           </div>
-          <button className="btn primary" onClick={submit}><IconPlus /> Добавить цель</button>
+          <button className="btn primary wide" onClick={submit}><IconPlus /> Добавить цель</button>
         </div>
 
         {goals.length === 0 ? (
@@ -70,19 +76,19 @@ export function GoalsView({ state }: Props) {
             <div>Цель собирает связанные задачи и показывает прогресс</div>
           </div>
         ) : (
-          <div className="goals-grid">
+          <div className="cards">
             {goals.map((goal) => {
               const progress = goalProgress(state, goal.id)
               const target = goal.target || progress.total
               const ratio = target ? Math.min(1, progress.done / target) : 0
               return (
-                <div key={goal.id} className={`goal-card${goal.archived ? ' archived' : ''}`}>
-                  <div className="goal-head">
+                <div key={goal.id} className={`card${goal.archived ? ' off' : ''}`}>
+                  <div className="card-head">
                     <i
                       className="bullet"
                       style={{ background: goal.color, width: 10, height: 10, borderRadius: 99, marginTop: 6 }}
                     />
-                    <div className="goal-name">{goal.title}</div>
+                    <div className="card-name">{goal.title}</div>
                     <button
                       className="mini-btn danger"
                       onClick={() => removeGoal(goal.id)}
